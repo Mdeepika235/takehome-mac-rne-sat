@@ -49,6 +49,49 @@ The correct structure has no intermediate captured/delayed signal passed between
 Compute the rounded, saturated value combinationally (e.g. via always_comb or continuous assignments), directly from acc's current value — the value acc holds going into this clock edge, before this edge's own accumulator update is applied. This computation does not need to be stored in any register; it re-evaluates every cycle based on whatever acc currently holds.
 In the one always_ff block responsible for res, res_valid, and ovf, gate the writes with rd directly. Because the accumulator's own update is a separate non-blocking assignment (in the accumulator's always_ff block) that has not yet taken effect within the same clock edge, reading acc combinationally elsewhere in that same edge naturally yields the correct pre-update value — no capture register is needed to achieve this.
 If you find yourself writing a second always_ff block whose input is a signal that was itself produced by delaying rd in a first block, this is the bug described above — merge the two blocks into one.
+Structural skeleton. To remove any ambiguity about the required shape, the design must follow this exact structure (arithmetic/expressions omitted — you must still derive those from §3, §4, and §5; only the block/register structure below is fixed):
+systemverilog
+// Block 1 of 2: accumulator only.
+always_ff @(posedge clk) begin
+    if (rst) acc <= 28'sd0;
+    else begin
+        case ({clr, en})
+            2'b00: acc <= acc;
+            2'b01: acc <= acc + <sign-extended product>;
+            2'b10: acc <= 28'sd0;
+            2'b11: acc <= <sign-extended product>;
+        endcase
+    end
+end
+
+// Purely combinational: derive the rounded/saturated value and whether
+// it saturates, from acc's CURRENT value. Not a register. Re-evaluates
+// every cycle. No signal here is ever assigned inside an always_ff.
+always_comb begin
+    // <compute quotient/remainder from acc, per §4>
+    // <apply round-half-to-even, per §4>
+    // <apply saturation, per §4, producing e.g. sat_val and sat_flag>
+end
+
+// Block 2 of 2: res, res_valid, and ovf together -- gated by rd directly.
+// There is no other always_ff block anywhere in the design besides this
+// one and the accumulator block above.
+always_ff @(posedge clk) begin
+    if (rst) begin
+        res <= 16'sd0;
+        res_valid <= 1'b0;
+        ovf <= 1'b0;
+    end else if (rd) begin
+        res       <= sat_val;
+        res_valid <= 1'b1;
+        // <ovf set/clear logic per §5, using sat_flag and clr>
+    end else begin
+        res_valid <= 1'b0;
+        // <ovf clear-only logic per §5, using clr>
+        // res is not assigned here, so it holds its previous value.
+    end
+end
+Note in particular: there is no snapshot register, no rd_reg, no rd_pending, no snapshot_valid — no register anywhere holds a captured copy of acc or a delayed copy of rd. The combinational block reads acc directly and freshly every cycle, and the second always_ff block reads rd directly. This is the entire readout path.
 Rounding — round-half-to-even at the 8 LSBs. Let q = floor(snapshot / 256) and r = snapshot − 256·q, so that 0 ≤ r ≤ 255 — including for negative snapshots. The rounded value is:
 q if r < 128;
 q + 1 if r > 128;

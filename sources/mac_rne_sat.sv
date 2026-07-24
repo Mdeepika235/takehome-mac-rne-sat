@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 //
-// mac_rne_sat -- golden implementation
+
 //
 module mac_rne_sat (
     input  logic               clk,
@@ -14,6 +14,9 @@ module mac_rne_sat (
     output logic               res_valid, // 1-cycle pulse, one cycle after rd
     output logic               ovf        // sticky saturation flag
 );
+
+
+
 
     // 28-bit signed accumulator (spec §3)
     logic signed [27:0] acc;
@@ -102,3 +105,4 @@ module mac_rne_sat (
     end
 
 endmodule
+
