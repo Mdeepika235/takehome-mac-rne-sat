@@ -365,67 +365,32 @@ ever happens via `clr`, never merely from the absence of saturation).
 
 ## 9. Required block structure (mandatory — matches §2's block count)
 
-Implement exactly these two `always_ff` blocks and one `always_comb`
-block. Expressions marked `<...>` must be filled in per §3–§8; the block
-and register structure itself is fixed and must not be altered.
+The design must contain exactly two `always_ff` blocks (per Requirement
+2.3) and may use one `always_comb` block (or equivalent continuous
+assignments) for the rounding/saturation math. You must derive the
+internal logic of each block yourself from §3–§8; this section only
+constrains the block *structure*, not the expressions inside it.
 
-```systemverilog
-// ===== Block A: accumulator only =====
-always_ff @(posedge clk) begin
-    if (rst) begin
-        acc <= 28'sd0;
-    end else begin
-        case ({clr, en})
-            2'b00: acc <= acc;
-            2'b01: acc <= acc + p_ext;      // p_ext per Requirement 3.2
-            2'b10: acc <= 28'sd0;
-            2'b11: acc <= p_ext;            // per Requirement 4.2 -- product ONLY
-        endcase
-    end
-end
+**Structural requirements:**
 
-// ===== Combinational rounding + saturation of acc's CURRENT value =====
-// Not a register. Re-evaluated every cycle from whatever acc currently
-// holds. Feeds Block B below. See Requirements 5.7, 6.1-6.7, 7.1-7.4.
-always_comb begin
-    // <compute q, r from acc per Requirement 6.3>
-    // <apply round-half-to-even per Requirement 6.2, producing rq>
-    // <apply saturation per Requirement 7.2, producing sat_val and sat_flag>
-end
-
-// ===== Block B: res, res_valid, and ovf together, gated by rd directly =====
-// This is the ONLY other always_ff block in the design (Requirement 2.3).
-// No third always_ff block, and no register anywhere else that stores a
-// captured copy of acc or a delayed copy of rd (Requirement 2.2, 5.8).
-always_ff @(posedge clk) begin
-    if (rst) begin
-        res       <= 16'sd0;
-        res_valid <= 1'b0;
-        ovf       <= 1'b0;
-    end else if (rd) begin
-        res       <= sat_val;
-        res_valid <= 1'b1;
-        if (sat_flag)
-            ovf <= 1'b1;       // Requirement 8.4: set wins over same-cycle clr
-        else if (clr)
-            ovf <= 1'b0;
-        // else: ovf holds (Requirement 8.5, "No saturating readout" rows do not apply here since rd=1; only reachable if sat_flag=0 and clr=0 -> hold)
-    end else begin
-        res_valid <= 1'b0;
-        if (clr)
-            ovf <= 1'b0;       // Requirement 8.3
-        // else: ovf holds (Requirement 8.2 sticky). res is NOT assigned
-        // here, so it holds its previous value automatically (Req. 5.10).
-    end
-end
-```
+- **Block A** updates only `acc`, following the truth table in §4.1.
+- A combinational region (an `always_comb` block, or continuous
+  `assign` statements) computes the rounded and saturated value, and
+  whether saturation occurred, from `acc`'s *current* value. This
+  region is not a register — it must produce a fresh result every
+  cycle based on whatever `acc` presently holds, with no register
+  anywhere in between `acc` and this computation.
+- **Block B** updates `res`, `res_valid`, and `ovf` together, in a
+  single `always_ff` block, gated directly by `rd` (the raw port
+  signal) — not by any other signal. This is the only other
+  `always_ff` block in the design besides Block A.
 
 **Requirement 9.1.** Do not introduce any register named (or serving the
 purpose of) `snapshot`, `rd_reg`, `rd_q`, `rd_pending`, `snapshot_valid`,
 or any functionally equivalent captured/delayed signal. The
-`always_comb` block above reads `acc` directly and freshly every cycle;
-Block B reads `rd` directly every cycle. This is the entire readout
-path — there is no third stage.
+combinational region above must read `acc` directly and freshly every
+cycle; Block B must read `rd` directly every cycle. There is no third
+stage anywhere in the readout path.
 
 ---
 
