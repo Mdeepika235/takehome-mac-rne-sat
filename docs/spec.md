@@ -7,10 +7,6 @@ saturated readout port and a sticky overflow flag. All behavior is
 synchronous to the rising edge of `clk`. Reset is synchronous and
 active-high.
 
-The readout path has a single cycle of latency: a request on `rd`
-produces a valid result exactly one cycle later, with no additional
-pipeline stages.
-
 ## 2. Interface
 
 | Port        | Dir | Type                   | Description                                        |
@@ -57,13 +53,10 @@ accumulator normally, but the snapshot reflects the accumulator's state
 prior to that update. For a `clr` occurring in the same cycle as `rd`,
 the readout returns the pre-clear value.
 
-**Latency.** `res_valid` asserts exactly one cycle after `rd`, and stays
-high for exactly one cycle (it deasserts the following cycle unless
-another `rd` is back-to-back). `res` updates on the same cycle as
-`res_valid`, together, from the same snapshot.
-
-**Hold behavior.** Between readouts, `res` retains its last value; it
-does not clear or change when `res_valid` is low.
+**Latency.** `res` and `res_valid` are registered outputs. In the cycle
+following an `rd`, `res_valid` is 1 and `res` carries the rounded,
+saturated snapshot. `res_valid` is a one-cycle pulse per `rd`. Between
+readouts, `res` holds its last value.
 
 **Rounding.** The snapshot is rounded to a 16-bit value using
 round-half-to-even applied at the 8 least-significant bits. Formally,
@@ -81,8 +74,6 @@ The rounded result is:
 
 | snap  | q  | r   | rounded | note                        |
 |-------|----|----|---------|-----------------------------|
-| 550   | 2  | 38 | 2       | below tie, rounds down      |
-| 700   | 2  | 188| 3       | above tie, rounds up        |
 | 640   | 2  | 128| 2       | tie, q already even         |
 | 896   | 3  | 128| 4       | tie, q odd, rounds to even  |
 | −384  | −2 | 128| −2      | tie, q already even         |
@@ -95,20 +86,12 @@ then clamps back to `32767`. Values exactly at the boundary
 
 ## 5. Overflow flag
 
-`ovf` is a registered, sticky flag.
-
-| Event                                                      | `ovf` next value |
-|-------------------------------------------------------------|--------------------|
-| Readout saturates, `clr` not asserted this cycle             | 1 (set)            |
-| Readout saturates and `clr` asserted the same cycle          | 1 (set takes priority) |
-| `clr` asserted, no saturating readout this cycle              | 0 (cleared)        |
-| No saturating readout, no `clr`                                | unchanged (sticky) |
-| `rst` asserted                                                 | 0                  |
-
-In short: a saturating readout always sets `ovf`, even if `clr` is
-asserted on the same cycle. `clr` only clears `ovf` when no saturating
-readout is landing that cycle. A non-saturating readout never clears
-`ovf` on its own.
+`ovf` is a registered, sticky flag. It is set whenever a readout
+saturates, and stays set across subsequent cycles — including further
+non-saturating readouts — until cleared. It is cleared only by `clr`
+(or `rst`). If a saturating readout and a `clr` land on the same cycle,
+the set takes priority: `ovf` ends up set, not cleared. A non-saturating
+readout never clears `ovf` on its own.
 
 ## 6. Reset
 
