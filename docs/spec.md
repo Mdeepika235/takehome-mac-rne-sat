@@ -60,10 +60,7 @@ the readout returns the pre-clear value.
 **Latency.** `res_valid` asserts exactly one cycle after `rd`, and stays
 high for exactly one cycle (it deasserts the following cycle unless
 another `rd` is back-to-back). `res` updates on the same cycle as
-`res_valid`, together, from the same snapshot. There is no additional
-delay anywhere in the readout path beyond this single register stage —
-the design does not need, and should not include, extra staging
-registers between the accumulator and the output.
+`res_valid`, together, from the same snapshot.
 
 **Hold behavior.** Between readouts, `res` retains its last value; it
 does not clear or change when `res_valid` is low.
@@ -89,14 +86,6 @@ The rounded result is:
 | 640   | 2  | 128| 2       | tie, q already even         |
 | 896   | 3  | 128| 4       | tie, q odd, rounds to even  |
 | −384  | −2 | 128| −2      | tie, q already even         |
-
-Note that an arithmetic right shift of a signed value by 8 bits
-correctly computes `floor(snap / 256)` for negative values as well —
-for example, `−384 >>> 8` gives `−2` directly, matching the table
-above with no further adjustment needed. Similarly, the low 8 bits of
-`snap`, read as an unsigned byte, give `r` directly and correctly for
-negative values too. A signed modulo operator should not be used for
-`r`, since it can return a negative remainder for negative operands.
 
 **Saturation.** The rounded value is then clamped to the signed 16-bit
 range `[−32768, 32767]`. Rounding is applied first and may itself push
